@@ -1,88 +1,47 @@
-﻿using System.Globalization;
-using System.Net;
-using System.Text;
-using ftp_client;
-using Renci.SshNet;
-using Renci.SshNet.Sftp;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Serilog;
+using sftp_client;
 
-class Program
+class Startup
 {
-    public static async Task Main(string[] args) // Изменено на Task
+    static async Task Main(string[] args)
     {
-        Console.WriteLine("Программа запущена.");
-        await DownloadFilesFromRemoteDirectoryAsync(CancellationToken.None); // Используем CancellationToken.None
-    }
+        // Настройка логирования
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.Console()
+            .CreateLogger();
 
-    private static async Task DownloadFilesFromRemoteDirectoryAsync(CancellationToken cancellationToken) // Изменено на static
-    {
-        var config = new SftpConfig
-        {
-            Host = AppSettings.BeltelSftp.Host,
-            Port = AppSettings.BeltelSftp.Port,
-            UserName = CryptographyHelper.DecryptFromBase64(AppSettings.BeltelSftp.UserName, Encoding.ASCII),
-            Password = CryptographyHelper.DecryptFromBase64(AppSettings.BeltelSftp.Password, Encoding.ASCII),
-            Source = AppSettings.BeltelSftp.Source
-        };
-
-        using (var client = new SftpClient(config.Host, config.Port, config.UserName, config.Password))
-        {
-            try
+        // Настройка хоста и сервисов
+        var host = Host.CreateDefaultBuilder(args)
+            .UseSerilog()
+            .ConfigureServices((context, services) =>
             {
-                await client.ConnectAsync(cancellationToken);
-                var files = client.ListDirectory(config.Source);
-                var counter = 0;
-
-                foreach (var file in files)
+                // Настройка конфигурации для SFTP
+                var sftpConfig = new SftpConfig
                 {
-                    counter++;
+                    Host = AppSettings.Host,
+                    Port = AppSettings.Port,
+                    UserName = AppSettings.UserName,
+                    Password = AppSettings.Password,
+                    Source = AppSettings.Source
+                };
 
-                    if (!file.IsDirectory && !file.IsSymbolicLink)
-                    {
-                        var isParseSuccess = DateTime.TryParseExact(file.Name.Substring(0, 10), "yyyyMMddHH", CultureInfo.InvariantCulture,
-                            DateTimeStyles.None, out DateTime parsedDataTime);
+                // Регистрация сервисов
+                services.AddSingleton(sftpConfig);
+                services.AddTransient<IFileUploadService, FileUploadService>();
+                services.AddTransient<IFileDownloadService, FileDownloadService>();
+            })
+            .Build();
 
-                        if (isParseSuccess)
-                        {
-                            var elements = DownloadFile(client, file);
-                        }
-                        else
-                        {
-                            throw new Exception($"Ошибка преобразования названия файла в тип DateTime.{file.FullName}");
-                        }
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.Message);
-            }
-            finally
-            {
-                client.Disconnect();
-                client.Dispose();
-            }
-        }
-    }
+        // Вызов сервисов
+        var uploadService = host.Services.GetRequiredService<IFileUploadService>();
+        await uploadService.UploadFilesAsync(CancellationToken.None);
 
-    private static string DownloadFile(SftpClient client, ISftpFile file) // Изменено на static
-    {
-        try
-        {
-            using (var memoryStream = new MemoryStream())
-            {
-                client.DownloadFile(file.FullName, memoryStream);
-                memoryStream.Seek(0, SeekOrigin.Begin);
+        var downloadService = host.Services.GetRequiredService<IFileDownloadService>();
+        await downloadService.DownloadFilesAsync(CancellationToken.None);
 
-                using (var textReader = new StreamReader(memoryStream))
-                {
-                    return textReader.ReadToEnd();
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e.Message);
-            return null;
-        }
+        Log.CloseAndFlush(); // Завершение логирования
     }
 }

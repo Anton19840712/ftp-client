@@ -1,7 +1,7 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 
-namespace ftp_client
+namespace sftp_client
 {
     public static class CryptographyHelper
     {

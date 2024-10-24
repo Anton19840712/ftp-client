@@ -1,12 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ftp_client
+﻿namespace sftp_client
 {
-    internal class SftpConfig
+    public class SftpConfig
     {
         public string Host { get; set; }
         public int Port { get; set; }
